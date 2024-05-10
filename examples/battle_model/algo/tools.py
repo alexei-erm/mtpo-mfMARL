@@ -367,7 +367,7 @@ class Runner(object):
                 os.makedirs(self.model_dir)
 
     def run(self, variant_eps, iteration, win_cnt=None):
-        info = {'mian': None, 'opponent': None}
+        info = {'main': None, 'opponent': None}
 
         # pass
         info['main'] = {'ave_agent_reward': 0., 'total_reward': 0., 'kill': 0.}
