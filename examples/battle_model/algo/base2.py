@@ -1,3 +1,13 @@
+"""
+# Original Work Copyright © 2018-present, Mean Field Reinforcement Learning (https://github.com/mlii/mfrl). 
+# All rights reserved.
+# Modifications (c) 2020-present, Royal Bank of Canada.
+# All rights reserved.
+# This source code is licensed under the license found in the
+# LICENSE file in the root directory of this source tree.
+"""
+
+
 import tensorflow as tf
 import numpy as np
 
@@ -13,11 +23,10 @@ class ValueNet:
         self.sess = sess
 
         self.handle = handle
-        self.view_space = env.get_view_space(handle) #(13,13,7)
+        self.view_space = env.get_view_space(handle)
         assert len(self.view_space) == 3
-        self.feature_space = env.get_feature_space(handle) #(34,)
-        self.num_actions = env.get_action_space(handle)[0] #21
-  
+        self.feature_space = env.get_feature_space(handle)
+        self.num_actions = env.get_action_space(handle)[0]
 
         self.update_every = update_every
         self.use_mf = use_mf  # trigger of using mean field
@@ -34,9 +43,9 @@ class ValueNet:
             self.mask = tf.placeholder(tf.float32, shape=(None,), name='Terminate-Mask')
 
             if self.use_mf:
-                self.act_prob_input = tf.placeholder(tf.float32, (None, self.num_actions), name="Act-Prob-Input")
-
-            # TODO: for calculating the Q-value, consider softmax usage
+                self.act_prob_input0 = tf.placeholder(tf.float32, (None, self.num_actions), name="Act-Prob-Input0")
+                self.act_prob_input1 = tf.placeholder(tf.float32, (None, self.num_actions), name="Act-Prob-Input1")
+            
             self.act_input = tf.placeholder(tf.int32, (None,), name="Act")
             self.act_one_hot = tf.one_hot(self.act_input, depth=self.num_actions, on_value=1.0, off_value=0.0)
 
@@ -77,10 +86,16 @@ class ValueNet:
         concat_layer = tf.concat([h_obs, h_emb], axis=1)
 
         if self.use_mf:
-            prob_emb = tf.layers.dense(self.act_prob_input, units=64, activation=active_func, name='Prob-Emb')
-            h_act_prob = tf.layers.dense(prob_emb, units=32, activation=active_func, name="Dense-Act-Prob")
+            
+            prob_emb = tf.layers.dense(self.act_prob_input0, units=64, activation=active_func, name='Prob-Emb0')
+            h_act_prob = tf.layers.dense(prob_emb, units=32, activation=active_func, name="Dense-Act-Prob0")
             concat_layer = tf.concat([concat_layer, h_act_prob], axis=1)
 
+            prob_emb = tf.layers.dense(self.act_prob_input1, units=64, activation=active_func, name='Prob-Emb1')
+            h_act_prob = tf.layers.dense(prob_emb, units=32, activation=active_func, name="Dense-Act-Prob1")
+            concat_layer = tf.concat([concat_layer, h_act_prob], axis=1)
+
+        
         dense2 = tf.layers.dense(concat_layer, units=128, activation=active_func, name="Dense2")
         out = tf.layers.dense(dense2, units=64, activation=active_func, name="Dense-Out")
 
@@ -94,7 +109,7 @@ class ValueNet:
 
     def calc_target_q(self, **kwargs):
         """Calculate the target Q-value
-        kwargs: {'obs', 'feature', 'prob', 'dones', 'rewards'}
+        kwargs: {'obs', 'feature', 'prob0', 'prob1', 'dones', 'rewards'}
         """
         feed_dict = {
             self.obs_input: kwargs['obs'],
@@ -102,9 +117,13 @@ class ValueNet:
         }
 
         if self.use_mf:
-            assert kwargs.get('prob', None) is not None
-            feed_dict[self.act_prob_input] = kwargs['prob']
-	
+            assert kwargs.get('prob0', None) is not None
+            feed_dict[self.act_prob_input0] = kwargs['prob0']
+
+            assert kwargs.get('prob1', None) is not None
+            feed_dict[self.act_prob_input1] = kwargs['prob1']
+            
+
         t_q, e_q = self.sess.run([self.t_q, self.e_q], feed_dict=feed_dict)
         act_idx = np.argmax(e_q, axis=1)
         q_values = t_q[np.arange(len(t_q)), act_idx]
@@ -119,7 +138,7 @@ class ValueNet:
 
     def act(self, **kwargs):
         """Act
-        kwargs: {'obs', 'feature', 'prob', 'eps'}
+        kwargs: {'obs', 'feature', 'prob0', 'prob1', 'eps'}
         """
         feed_dict = {
             self.obs_input: kwargs['state'][0],
@@ -129,17 +148,21 @@ class ValueNet:
         self.temperature = kwargs['eps']
 
         if self.use_mf:
-            assert kwargs.get('prob', None) is not None
-            assert len(kwargs['prob']) == len(kwargs['state'][0])
-            feed_dict[self.act_prob_input] = kwargs['prob']
-
+            assert kwargs.get('prob0', None) is not None
+            assert len(kwargs['prob0']) == len(kwargs['state'][0])
+            feed_dict[self.act_prob_input0] = kwargs['prob0']
+            
+            assert kwargs.get('prob1', None) is not None
+            assert len(kwargs['prob1']) == len(kwargs['state'][0])
+            feed_dict[self.act_prob_input1] = kwargs['prob1']
         actions = self.sess.run(self.predict, feed_dict=feed_dict)
         actions = np.argmax(actions, axis=1).astype(np.int32)
         return actions
 
     def train(self, **kwargs):
         """Train the model
-        kwargs: {'state': [obs, feature], 'target_q', 'prob', 'acts'}
+        kwargs: {'state': [obs, feature], 'target_q', 'prob0', 'prob1', 'prob2', 'prob3', 'acts'}
+
         """
         feed_dict = {
             self.obs_input: kwargs['state'][0],
@@ -148,14 +171,13 @@ class ValueNet:
             self.mask: kwargs['masks']
         }
 
-        #print(kwargs['prob'].shape) (64,21)
-        #print(kwargs['acts'].shape) (64,)
-
-
         if self.use_mf:
-            assert kwargs.get('prob', None) is not None
-            feed_dict[self.act_prob_input] = kwargs['prob'] 
-
+            assert kwargs.get('prob0', None) is not None
+            feed_dict[self.act_prob_input0] = kwargs['prob0']
+            
+            assert kwargs.get('prob1', None) is not None
+            feed_dict[self.act_prob_input1] = kwargs['prob1']
+        
         feed_dict[self.act_input] = kwargs['acts']
         _, loss, e_q = self.sess.run([self.train_op, self.loss, self.e_q_max], feed_dict=feed_dict)
         return loss, {'Eval-Q': np.round(np.mean(e_q), 6), 'Target-Q': np.round(np.mean(kwargs['target_q']), 6)}

@@ -17,13 +17,14 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--algo', type=str, choices={'ac', 'mfac', 'mfq', 'il'}, help='choose an algorithm from the preset', required=True)
-    parser.add_argument('--oppo', type=str, choices={'ac', 'mfac', 'mfq', 'il'}, help='indicate the opponent model')
+    parser.add_argument('--algo', type=str, choices={'ac', 'mfac', 'mfq', 'il','mtmfq'}, help='choose an algorithm from the preset', required=True)
+    parser.add_argument('--oppo', type=str, choices={'ac', 'mfac', 'mfq', 'il','mtmfq'}, help='indicate the opponent model')
     parser.add_argument('--n_round', type=int, default=50, help='set the trainning round')
     parser.add_argument('--render', action='store_true', help='render or not (if true, will render every save)')
     parser.add_argument('--map_size', type=int, default=40, help='set the size of map')  # then the amount of agents is 64
     parser.add_argument('--max_steps', type=int, default=400, help='set the max steps')
     parser.add_argument('--idx', nargs='*', required=True)
+    parser.add_argument('--mtmfqp', type=int, choices={0,1}, default=0, help='set the position of mtmfq')
 
     args = parser.parse_args()
 
@@ -31,7 +32,7 @@ if __name__ == '__main__':
     env = magent.GridWorld('battle', map_size=args.map_size)
     env.set_render_dir(os.path.join(BASE_DIR, 'examples/battle_model', 'build/render'))
     handles = env.get_handles()
-
+    mtmfq_position = args.mtmfqp
     tf_config = tf.ConfigProto(allow_soft_placement=True, log_device_placement=False)
     tf_config.gpu_options.allow_growth = True
 
