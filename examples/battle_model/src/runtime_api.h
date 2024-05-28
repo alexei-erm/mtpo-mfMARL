@@ -39,6 +39,8 @@ int env_render_next_file(EnvHandle game);
  *  GridWorld special
  */
 // agent
+int env_get_hp(EnvHandle game, GroupHandle group, int agent_id, float hp); 
+int env_get_agent_pos(EnvHandle game, GroupHandle group, int agent_id, int position_x, int position_y);
 int gridworld_register_agent_type(EnvHandle game, const char *name, int n, const char **keys, float *values);
 int gridworld_new_group(EnvHandle game, const char *agent_type_name, GroupHandle *group);
 int gridworld_add_agents(EnvHandle game, GroupHandle group, int n, const char *method,

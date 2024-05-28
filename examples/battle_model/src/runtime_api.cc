@@ -93,6 +93,26 @@ int env_render_next_file(EnvHandle game) {
  *  GridWorld special
  */
 // agent
+
+int env_get_hp(EnvHandle game, GroupHandle group, int agent_id, float hp)
+{
+    LOG(TRACE) << "gridworld get health point ";
+    ((::magent::gridworld::GridWorld *)game)->get_hp(group, agent_id, hp);
+    return 0;
+}
+
+
+
+int env_get_agent_pos(EnvHandle game, GroupHandle group, int agent_id, int position_x, int position_y)
+{
+    LOG(TRACE) << "gridworld get Agent position";
+    ((::magent::gridworld::GridWorld *)game)->get_agent_pos(group, agent_id, position_x, position_y);
+    return 0;
+}
+
+
+
+
 int gridworld_register_agent_type(EnvHandle game, const char *name, int n,
                                   const char **keys, float *values) {
     LOG(TRACE) << "gridworld register agent type.  ";

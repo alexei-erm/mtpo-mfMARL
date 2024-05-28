@@ -15,7 +15,7 @@ from magent.gridworld import GridWorld
 
 
 class ValueNet:
-    def __init__(self, sess, env, handle, name, update_every=5, use_mf=False, learning_rate=1e-4, tau=0.005, gamma=0.95):
+    def __init__(self, sess, env, handle, name, update_every=5, use_mf=False, learning_rate=1e-4, tau=0.005, gamma=0.95,maxelements=20):
         # assert isinstance(env, GridWorld)
         self.env = env
         self.name = name
@@ -27,6 +27,11 @@ class ValueNet:
         assert len(self.view_space) == 3
         self.feature_space = env.get_feature_space(handle)
         self.num_actions = env.get_action_space(handle)[0]
+        count = maxelements * 5
+        self.new_space = (count,)
+        self.update_every = update_every
+        self.use_mf = use_mf  # trigger of using mean field
+        self.temperature = 0.1
 
         self.update_every = update_every
         self.use_mf = use_mf  # trigger of using mean field
@@ -38,7 +43,8 @@ class ValueNet:
 
         with tf.variable_scope(name or "ValueNet"):
             self.name_scope = tf.get_variable_scope().name
-            self.obs_input = tf.placeholder(tf.float32, (None,) + self.view_space, name="Obs-Input")
+            #self.obs_input = tf.placeholder(tf.float32, (None,) + self.view_space, name="Obs-Input")
+            self.new_input = tf.placeholder(tf.float32, (None,) + self.new_space, name="New-Input")
             self.feat_input = tf.placeholder(tf.float32, (None,) + self.feature_space, name="Feat-Input")
             self.mask = tf.placeholder(tf.float32, shape=(None,), name='Terminate-Mask')
 
@@ -72,18 +78,14 @@ class ValueNet:
                 self.train_op = tf.train.AdamOptimizer(self.lr).minimize(self.loss)
 
     def _construct_net(self, active_func=None, reuse=False):
-        conv1 = tf.layers.conv2d(self.obs_input, filters=32, kernel_size=3,
-                                 activation=active_func, name="Conv1")
-        conv2 = tf.layers.conv2d(conv1, filters=32, kernel_size=3, activation=active_func,
-                                 name="Conv2")
-        flatten_obs = tf.reshape(conv2, [-1, np.prod([v.value for v in conv2.shape[1:]])])
 
-        h_obs = tf.layers.dense(flatten_obs, units=256, activation=active_func,
-                                name="Dense-Obs")
         h_emb = tf.layers.dense(self.feat_input, units=32, activation=active_func,
                                 name="Dense-Emb", reuse=reuse)
 
-        concat_layer = tf.concat([h_obs, h_emb], axis=1)
+        h_emb2 = tf.layers.dense(self.new_input, units=32, activation=active_func,
+                                name="Dense-Emb2", reuse=reuse)
+
+        concat_layer = tf.concat([h_emb2, h_emb], axis=1)
 
         if self.use_mf:
             
@@ -112,8 +114,8 @@ class ValueNet:
         kwargs: {'obs', 'feature', 'prob0', 'prob1', 'dones', 'rewards'}
         """
         feed_dict = {
-            self.obs_input: kwargs['obs'],
-            self.feat_input: kwargs['feature']
+            self.feat_input: kwargs['feature'],
+            self.new_input: kwargs['feature2']
         }
 
         if self.use_mf:
@@ -140,14 +142,15 @@ class ValueNet:
         """Act
         kwargs: {'obs', 'feature', 'prob0', 'prob1', 'eps'}
         """
+
         feed_dict = {
-            self.obs_input: kwargs['state'][0],
-            self.feat_input: kwargs['state'][1]
+            self.feat_input: kwargs['state'][0],
+            self.new_input: kwargs['state'][1]
         }
 
         self.temperature = kwargs['eps']
-
         if self.use_mf:
+            
             assert kwargs.get('prob0', None) is not None
             assert len(kwargs['prob0']) == len(kwargs['state'][0])
             feed_dict[self.act_prob_input0] = kwargs['prob0']
@@ -165,8 +168,8 @@ class ValueNet:
 
         """
         feed_dict = {
-            self.obs_input: kwargs['state'][0],
-            self.feat_input: kwargs['state'][1],
+            self.feat_input: kwargs['state'][0],
+            self.new_input: kwargs['state'][1],
             self.target_q_input: kwargs['target_q'],
             self.mask: kwargs['masks']
         }

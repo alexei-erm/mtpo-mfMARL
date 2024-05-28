@@ -702,6 +702,38 @@ void GridWorld::get_reward(GroupHandle group, float *buffer) {
     }
 }
 
+void GridWorld::get_hp(GroupHandle group, int agent_id, float hp)
+{
+
+	std::vector<Agent*> &agents = groups[group].get_agents();
+        size_t agent_size = agents.size();
+	for(int i=0; i < agent_size; i++)
+	{
+		if(agent_id == agents[i]->get_id())
+		{
+			hp = agents[i]->get_hp();
+		}
+	}
+
+}
+
+
+void GridWorld::get_agent_pos(GroupHandle group, int agent_id, int position_x, int position_y)
+{
+
+	std::vector<Agent*> &agents = groups[group].get_agents();
+        size_t agent_size = agents.size();
+	for(int i=0; i < agent_size; i++)
+	{
+		if(agent_id == agents[i]->get_id())
+		{
+			position_x = agents[i]->get_pos().x;
+			position_y = agents[i]->get_pos().y;
+		}
+	}
+
+}
+
 /**
  * info getter
  */
@@ -721,7 +753,19 @@ void GridWorld::get_info(GroupHandle group, const char *name, void *void_buffer)
         for (int i = 0; i < agent_size; i++) {
             int_buffer[i] = agents[i]->get_id();
         }
-    } else if (strequ(name, "pos")) {   // int
+    }
+
+    else if(strequ(name, "hp"))
+    {	
+        size_t agent_size = agents.size();
+        #pragma omp parallel for
+        for (int i = 0; i < agent_size; i++) {
+            float_buffer[i] = agents[i]->get_hp();
+        } 
+    } 
+    
+    
+    else if (strequ(name, "pos")) {   // int
         size_t agent_size = agents.size();
         #pragma omp parallel for
         for (int i = 0; i < agent_size; i++) {

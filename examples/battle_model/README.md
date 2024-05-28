@@ -4,7 +4,7 @@ A cooperative and competitive senario implemented based on MAgent platform
 
 ## Code structure
 
-- `./algo`: contains algorithms (MFAC, AC, MFQ, IL)
+- `./algo`: contains algorithms (MFQ,MTMFQ,MTPOMFQ)
 
 - `./python` and `./src`: contains engine files
 

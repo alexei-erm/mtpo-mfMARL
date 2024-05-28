@@ -10,18 +10,16 @@ def get_config(map_size):
     predator = cfg.register_agent_type(
         "predator",
         {
-            'width': 2, 'length': 2, 'hp': 1, 'speed': 1,
-            'view_range': gw.CircleRange(5), 'attack_range': gw.CircleRange(2),
-            'attack_penalty': -0.2
+            'width': 2, 'length': 2, 'hp': 10, 'speed': 2,
+            'view_range': gw.CircleRange(7), 'attack_range': gw.CircleRange(2), 'damage': 2, 'step_recover': 0.1, 'kill_reward': 5, 'dead_penalty': -0.1, 'attack_penalty': -0.3
         })
-
     prey = cfg.register_agent_type(
-        "prey",
+       "prey",
         {
-            'width': 1, 'length': 1, 'hp': 1, 'speed': 1.5,
-            'view_range': gw.CircleRange(4), 'attack_range': gw.CircleRange(0)
+            'width': 1, 'length': 1, 'hp': 2, 'speed': 2.5,
+            'view_range': gw.CircleRange(6), 'attack_range': gw.CircleRange(0), 'damage': 0, 'step_recover': 0, 'kill_reward': 100, 'dead_penalty': -0.5 
         })
-
+    
     predator_group  = cfg.add_group(predator)
     prey_group = cfg.add_group(prey)
 

@@ -17,12 +17,12 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--algo', type=str, choices={'ac', 'mfac', 'mfq', 'il','mtmfq'}, help='choose an algorithm from the preset', required=True)
-    parser.add_argument('--oppo', type=str, choices={'ac', 'mfac', 'mfq', 'il','mtmfq'}, help='indicate the opponent model')
-    parser.add_argument('--n_round', type=int, default=50, help='set the trainning round')
+    parser.add_argument('--algo', type=str, choices={'ac', 'mfac', 'mfq', 'il','mtmfq','pomtmfq'}, help='choose an algorithm from the preset', required=True)
+    parser.add_argument('--oppo', type=str, choices={'ac', 'mfac', 'mfq', 'il','mtmfq','pomtmfq'}, help='indicate the opponent model')
+    parser.add_argument('--n_round', type=int, default=10, help='set the trainning round')
     parser.add_argument('--render', action='store_true', help='render or not (if true, will render every save)')
-    parser.add_argument('--map_size', type=int, default=40, help='set the size of map')  # then the amount of agents is 64
-    parser.add_argument('--max_steps', type=int, default=400, help='set the max steps')
+    parser.add_argument('--map_size', type=int, default=28, help='set the size of map')  # then the amount of agents is 64
+    parser.add_argument('--max_steps', type=int, default=500, help='set the max steps')
     parser.add_argument('--idx', nargs='*', required=True)
     parser.add_argument('--mtmfqp', type=int, choices={0,1}, default=0, help='set the position of mtmfq')
 
@@ -46,7 +46,7 @@ if __name__ == '__main__':
     models[0].load(main_model_dir, step=args.idx[0])
     models[1].load(oppo_model_dir, step=args.idx[1])
 
-    runner = tools.Runner(sess, env, handles, args.map_size, args.max_steps, models, battle, render_every=0)
+    runner = tools.Runner(sess, env, handles, args.map_size, args.max_steps, models, battle, render_every=2)
     win_cnt = {'main': 0, 'opponent': 0}
 
     for k in range(0, args.n_round):

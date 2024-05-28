@@ -49,7 +49,7 @@ class MetaBuffer(object):
             num -= tail
             start = tail
             self._flag = 0
-
+        
         self.data[self._flag:self._flag + num] = value[start:]
         self._flag += num
         self.length = min(self.length + len(value), self.max_len)
@@ -123,9 +123,9 @@ class EpisodesBuffer(Buffer):
 
 
 class AgentMemory(object):
-    def __init__(self, obs_shape, feat_shape, act_n, max_len, use_mean=False):
-        self.obs0 = MetaBuffer(obs_shape, max_len)
+    def __init__(self, feat_shape,feat_shape2, act_n, max_len, use_mean=False):
         self.feat0 = MetaBuffer(feat_shape, max_len)
+        self.feat2 = MetaBuffer(feat_shape2, max_len)
         self.actions = MetaBuffer((), max_len, dtype='int32')
         self.rewards = MetaBuffer((), max_len)
         self.terminals = MetaBuffer((), max_len, dtype='bool')
@@ -134,9 +134,9 @@ class AgentMemory(object):
         if self.use_mean:
             self.prob = MetaBuffer((act_n,), max_len)
 
-    def append(self, obs0, feat0, act, reward, alive, prob=None):
-        self.obs0.append(np.array([obs0]))
+    def append(self, feat0,feat2, act, reward, alive, prob=None):
         self.feat0.append(np.array([feat0]))
+        self.feat2.append(np.array([feat2]))
         self.actions.append(np.array([act], dtype=np.int32))
         self.rewards.append(np.array([reward]))
         self.terminals.append(np.array([not alive], dtype=np.bool))
@@ -146,8 +146,8 @@ class AgentMemory(object):
 
     def pull(self):
         res = {
-            'obs0': self.obs0.pull(),
             'feat0': self.feat0.pull(),
+            'feat2': self.feat2.pull(),
             'act': self.actions.pull(),
             'rewards': self.rewards.pull(),
             'terminals': self.terminals.pull(),
@@ -158,18 +158,18 @@ class AgentMemory(object):
 
 
 class MemoryGroup(object):
-    def __init__(self, obs_shape, feat_shape, act_n, max_len, batch_size, sub_len, use_mean=False):
+    def __init__(self, feat_shape, feat_shape2,act_n, max_len, batch_size, sub_len, use_mean=False):
         self.agent = dict()
         self.max_len = max_len
         self.batch_size = batch_size
-        self.obs_shape = obs_shape
         self.feat_shape = feat_shape
+        self.feat_shape2 = feat_shape2
         self.sub_len = sub_len
         self.use_mean = use_mean
         self.act_n = act_n
 
-        self.obs0 = MetaBuffer(obs_shape, max_len)
         self.feat0 = MetaBuffer(feat_shape, max_len)
+        self.feat2 = MetaBuffer(feat_shape2, max_len)
         self.actions = MetaBuffer((), max_len, dtype='int32')
         self.rewards = MetaBuffer((), max_len)
         self.terminals = MetaBuffer((), max_len, dtype='bool')
@@ -179,8 +179,8 @@ class MemoryGroup(object):
         self._new_add = 0
 
     def _flush(self, **kwargs):
-        self.obs0.append(kwargs['obs0'])
         self.feat0.append(kwargs['feat0'])
+        self.feat2.append(kwargs['feat2'])
         self.actions.append(kwargs['act'])
         self.rewards.append(kwargs['rewards'])
         self.terminals.append(kwargs['terminals'])
@@ -195,29 +195,30 @@ class MemoryGroup(object):
     def push(self, **kwargs):
         for i, _id in enumerate(kwargs['ids']):
             if self.agent.get(_id) is None:
-                self.agent[_id] = AgentMemory(self.obs_shape, self.feat_shape, self.act_n, self.sub_len, use_mean=self.use_mean)
+                self.agent[_id] = AgentMemory(self.feat_shape, self.feat_shape2, self.act_n, self.sub_len, use_mean=self.use_mean)
             if self.use_mean:
-                self.agent[_id].append(obs0=kwargs['state'][0][i], feat0=kwargs['state'][1][i], act=kwargs['acts'][i], reward=kwargs['rewards'][i], alive=kwargs['alives'][i], prob=kwargs['prob'][i])
+                self.agent[_id].append(feat0=kwargs['state'][0][i], feat2=kwargs['state'][1][i], act=kwargs['acts'][i], reward=kwargs['rewards'][i], alive=kwargs['alives'][i], prob=kwargs['prob'][i])
             else:
-                self.agent[_id].append(obs0=kwargs['state'][0][i], feat0=kwargs['state'][1][i], act=kwargs['acts'][i], reward=kwargs['rewards'][i], alive=kwargs['alives'][i])
+                self.agent[_id].append(feat0=kwargs['state'][0][i], feat2=kwargs['state'][1][i], act=kwargs['acts'][i], reward=kwargs['rewards'][i], alive=kwargs['alives'][i])
 
     def tight(self):
         ids = list(self.agent.keys())
         np.random.shuffle(ids)
         for ele in ids:
             tmp = self.agent[ele].pull()
-            self._new_add += len(tmp['obs0'])
+            self._new_add += len(tmp['feat0'])
             self._flush(**tmp)
         self.agent = dict()  # clear
+
 
     def sample(self):
         idx = np.random.choice(self.nb_entries, size=self.batch_size)
         next_idx = (idx + 1) % self.nb_entries
 
-        obs = self.obs0.sample(idx)
-        obs_next = self.obs0.sample(next_idx)
         feature = self.feat0.sample(idx)
         feature_next = self.feat0.sample(next_idx)
+        feature2 = self.feat2.sample(idx)
+        feature2_next = self.feat2.sample(next_idx)
         actions = self.actions.sample(idx)
         rewards = self.rewards.sample(idx)
         dones = self.terminals.sample(idx)
@@ -226,19 +227,19 @@ class MemoryGroup(object):
         if self.use_mean:
             act_prob = self.prob.sample(idx)
             act_next_prob = self.prob.sample(next_idx)
-            return obs, feature, actions, act_prob, obs_next, feature_next, act_next_prob, rewards, dones, masks
+            return feature, feature2, actions, act_prob, feature_next, feature2_next, act_next_prob, rewards, dones, masks
         else:
-            return obs, feature, obs_next, feature_next, dones, rewards, actions, masks
+            return feature, feature2, feature_next, feature2_next, dones, rewards, actions, masks
 
     def get_batch_num(self):
-        print('\n[INFO] Length of buffer and new add:', len(self.obs0), self._new_add)
+        print('\n[INFO] Length of buffer and new add:', len(self.feat0), self._new_add)
         res = self._new_add * 2 // self.batch_size
         self._new_add = 0
         return res
 
     @property
     def nb_entries(self):
-        return len(self.obs0)
+        return len(self.feat0)
 
 
 class SummaryObj:
@@ -304,7 +305,7 @@ class SummaryObj:
 
 class Runner(object):
     def __init__(self, sess, env, handles, map_size, max_steps, models,
-                play_handle, render_every=None, save_every=None, tau=None, log_name=None, log_dir=None, model_dir=None, train=False):
+                play_handle,mtmfq_position = 0, render_every=None, save_every=None, tau=None, log_name=None, log_dir=None, model_dir=None, train=False):
         """Initialize runner
 
         Parameters
@@ -346,6 +347,7 @@ class Runner(object):
         self.play = play_handle
         self.model_dir = model_dir
         self.train = train
+        self.mtmfq_position = mtmfq_position
 
         if self.train:
             self.summary = SummaryObj(log_name=log_name, log_dir=log_dir)
@@ -374,7 +376,7 @@ class Runner(object):
         info['opponent'] = {'ave_agent_reward': 0., 'total_reward': 0., 'kill': 0.}
 
         max_nums, nums, agent_r_records, total_rewards = self.play(env=self.env, n_round=iteration, map_size=self.map_size, max_steps=self.max_steps, handles=self.handles,
-                    models=self.models, print_every=50, eps=variant_eps, render=(iteration + 1) % self.render_every if self.render_every > 0 else False, train=self.train)
+                    models=self.models, mtmfq_position = self.mtmfq_position, print_every=50, eps=variant_eps, render=(iteration + 1) % self.render_every if self.render_every > 0 else False, train=self.train)
 
         for i, tag in enumerate(['main', 'opponent']):
             info[tag]['total_reward'] = total_rewards[i]
@@ -384,15 +386,11 @@ class Runner(object):
         if self.train:
             print('\n[INFO] {}'.format(info['main']))
 
-            # if self.save_every and (iteration + 1) % self.save_every == 0:
-            if info['main']['total_reward'] > info['opponent']['total_reward']:
-                print(Color.INFO.format('\n[INFO] Begin self-play Update ...'))
-                self.sess.run(self.sp_op)
-                print(Color.INFO.format('[INFO] Self-play Updated!\n'))
-
+            if self.save_every and (iteration + 1) % self.save_every == 0:
                 print(Color.INFO.format('[INFO] Saving model ...'))
                 self.models[0].save(self.model_dir + '-0', iteration)
                 self.models[1].save(self.model_dir + '-1', iteration)
+                self.summary.write(info['main'], iteration)
 
                 self.summary.write(info['main'], iteration)
         else:
@@ -404,3 +402,11 @@ class Runner(object):
             else:
                 win_cnt['main'] += 1
                 win_cnt['opponent'] += 1
+
+        #roll models
+        #m0 = self.models[0]
+        #m1 = self.models[1]
+        #self.models[0] = m1
+        #self.models[1] = m0
+
+        return total_rewards

@@ -4,12 +4,12 @@ from __future__ import absolute_import
 import ctypes
 import os
 import importlib
-
+import operator
 import numpy as np
 
 from .c_lib import _LIB, as_float_c_array, as_int32_c_array
 from .environment import Environment
-
+from scipy.spatial.distance import cityblock
 
 class GridWorld(Environment):
     # constant
@@ -217,8 +217,29 @@ class GridWorld(Environment):
         self.obs_bufs = []
         self.obs_bufs.append({})
         self.obs_bufs.append({})
-
-    def get_observation(self, handle):
+        
+        
+    def get_neighbors(self,j,pos_list,r=6):
+        """
+        Given [x,y] positions of all agents in `pos_list`,
+        return indices of agents that are within the radius of agent j (i.e. the j'th index in `pos_list`)
+        """
+        neighbor_dict = {}
+        neighbors = []
+        pos_j = pos_list[j]
+        for i,pos in enumerate(pos_list):
+            if i == j:
+                continue
+            dist = cityblock(pos,pos_j)
+            if dist < r:
+                neighbor_dict[i] = dist
+        sorted_d = sorted(neighbor_dict.items(), key = operator.itemgetter(1))
+        for x in range(len(sorted_d)):
+            neighbors.append(sorted_d[x][0])
+        return neighbors
+    
+    
+    def get_observation(self, handle, handles, listofagentids, grouplist, maxelements):
         """ get observation of a whole group
 
         Parameters
@@ -232,6 +253,49 @@ class GridWorld(Environment):
             features is a numpy array, whose shape is n * feature_size
             for agent i, (views[i], features[i]) is its observation at this step
         """
+        listofhp = []
+        listofid = []
+        listofpos = []
+        n_group = len(handles)
+        for i in range(n_group): 
+            temphp = self.get_agent_hp(handles[i])
+            listofhp.extend(temphp)
+            tempid = self.get_agent_id(handles[i])
+            listofid.extend(tempid)
+            temppos = self.get_pos(handles[i])
+            listofpos.extend(temppos)
+        dictofhp = {}
+        dictofpos = {}
+        for i in range(len(listofid)):
+            dictofhp[listofid[i]] = listofhp[i]
+            dictofpos[listofid[i]] = listofpos[i]
+       
+        new_observation = [[] for i in range(len(listofagentids))]
+        k = 0 
+        for i in listofagentids:
+            count = len(listofagentids[i])
+            if(count >= maxelements):
+                minimum = maxelements
+            else:
+                minimum = count
+            new_list = listofagentids[i]
+            new_grouplist = grouplist[i]
+            for j in range(minimum):
+                posit = new_list[j]
+                group = new_grouplist[j] 
+                hp = dictofhp[posit]
+                positionx, positiony = dictofpos[posit]
+                new_observation[k].append(posit)
+                new_observation[k].append(group)
+                new_observation[k].append(hp)
+                new_observation[k].append(positionx)
+                new_observation[k].append(positiony)
+            total = maxelements * 5
+            if(len(new_observation[k]) < total):
+                for b in range(len(new_observation[k]), total):
+                    new_observation[k].append(-1)
+            k = k + 1
+        new_list = np.asarray(new_observation)
         view_space = self.view_space[handle.value]
         feature_space = self.feature_space[handle.value]
         no = handle.value
@@ -244,8 +308,98 @@ class GridWorld(Environment):
         bufs[0] = as_float_c_array(view_buf)
         bufs[1] = as_float_c_array(feature_buf)
         _LIB.env_get_observation(self.game, handle, bufs)
+        return feature_buf, new_list
 
-        return view_buf, feature_buf
+
+    def get_observation_gather(self, food_handle, handle, handles, listofagentids, grouplist, maxelements):
+        """ get observation of a whole group
+
+        Parameters
+        ----------
+        handle : group handle
+
+        Returns
+        -------
+        obs : tuple (views, features)
+            views is a numpy array, whose shape is n * view_width * view_height * n_channel
+            features is a numpy array, whose shape is n * feature_size
+            for agent i, (views[i], features[i]) is its observation at this step
+        """
+        
+        positionoffood = self.get_pos(food_handle)
+        posoffoodlist = [] 
+        for i in range(len(positionoffood)): 
+            for j in range(len(positionoffood[i])):
+                posoffoodlist.append(positionoffood[i][j])
+        
+        
+        foodlength = len(posoffoodlist)
+        
+        
+        if (foodlength < 446):
+            for i in range(foodlength, 446):
+                posoffoodlist.append(-1)
+
+        
+        posoffoodlist = np.asarray(posoffoodlist)
+        posoffoodlist = np.tile(posoffoodlist, (len(listofagentids), 1))
+
+        listofhp = []
+        listofid = []
+        listofpos = []
+        n_group = len(handles)
+        for i in range(n_group): 
+            temphp = self.get_agent_hp(handles[i])
+            listofhp.extend(temphp)
+            tempid = self.get_agent_id(handles[i])
+            listofid.extend(tempid)
+            temppos = self.get_pos(handles[i])
+            listofpos.extend(temppos)
+        dictofhp = {}
+        dictofpos = {}
+        for i in range(len(listofid)):
+            dictofhp[listofid[i]] = listofhp[i]
+            dictofpos[listofid[i]] = listofpos[i]
+       
+        new_observation = [[] for i in range(len(listofagentids))]
+        k = 0 
+        for i in listofagentids:
+            count = len(listofagentids[i])
+            if(count >= maxelements):
+                minimum = maxelements
+            else:
+                minimum = count
+            new_list = listofagentids[i]
+            new_grouplist = grouplist[i]
+            for j in range(minimum):
+                posit = new_list[j]
+                group = new_grouplist[j] 
+                hp = dictofhp[posit]
+                positionx, positiony = dictofpos[posit]
+                new_observation[k].append(posit)
+                new_observation[k].append(group)
+                new_observation[k].append(hp)
+                new_observation[k].append(positionx)
+                new_observation[k].append(positiony)
+            total = maxelements * 5
+            if(len(new_observation[k]) < total):
+                for b in range(len(new_observation[k]), total):
+                    new_observation[k].append(-1)
+            k = k + 1
+        new_list = np.asarray(new_observation)
+        view_space = self.view_space[handle.value]
+        feature_space = self.feature_space[handle.value]
+        no = handle.value
+
+        n = self.get_num(handle)
+        view_buf = self._get_obs_buf(no, self.OBS_INDEX_VIEW, (n,) + view_space, np.float32)
+        feature_buf = self._get_obs_buf(no, self.OBS_INDEX_HP, (n,) + feature_space, np.float32)
+
+        bufs = (ctypes.POINTER(ctypes.c_float) * 2)()
+        bufs[0] = as_float_c_array(view_buf)
+        bufs[1] = as_float_c_array(feature_buf)
+        _LIB.env_get_observation(self.game, handle, bufs)
+        return feature_buf, new_list, posoffoodlist
 
     def set_action(self, handle, actions):
         """ set actions for whole group
@@ -344,6 +498,19 @@ class GridWorld(Environment):
                           buf.ctypes.data_as(ctypes.POINTER(ctypes.c_int32)))
         return buf
 
+    def get_agent_hp(self, handle):
+        """ get agent hp
+
+        Returns
+        -------
+        hps : numpy array (float)
+            hp of all the agents in the group
+        """
+        n = self.get_num(handle)
+        buf = np.empty((n,), dtype=np.float32)
+        _LIB.env_get_info(self.game, handle, b"hp",
+                          buf.ctypes.data_as(ctypes.POINTER(ctypes.c_float)))
+        return buf
     def get_alive(self, handle):
         """ get alive status of agents in a group
 

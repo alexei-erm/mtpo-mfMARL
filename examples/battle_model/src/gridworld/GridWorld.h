@@ -58,6 +58,8 @@ public:
 
     // special run step
     void clear_dead();
+    void get_hp(GroupHandle group, int agent_id, float hp);
+    void get_agent_pos(GroupHandle group, int agent_id, int position_x, int position_y);
     void set_goal(GroupHandle group, const char *method, const int *linear_buffer);
 
     // agent

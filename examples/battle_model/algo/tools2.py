@@ -127,9 +127,9 @@ class EpisodesBuffer(Buffer):
 
 
 class AgentMemory(object):
-    def __init__(self, obs_shape, feat_shape, act_n, max_len, use_mean=False):
-        self.obs0 = MetaBuffer(obs_shape, max_len)
+    def __init__(self, feat_shape,feat_shape2, act_n, max_len, use_mean=False):
         self.feat0 = MetaBuffer(feat_shape, max_len)
+        self.feat2 = MetaBuffer(feat_shape2, max_len)
         self.actions = MetaBuffer((), max_len, dtype='int32')
         self.rewards = MetaBuffer((), max_len)
         self.terminals = MetaBuffer((), max_len, dtype='bool')
@@ -139,9 +139,9 @@ class AgentMemory(object):
             self.prob0 = MetaBuffer((act_n,), max_len)
             self.prob1 = MetaBuffer((act_n,), max_len)
 
-    def append(self, obs0, feat0, act, reward, alive, prob0=None,  prob1=None,  prob2=None,  prob3=None):
-        self.obs0.append(np.array([obs0]))
+    def append(self, feat0, feat2, act, reward, alive, prob0=None,  prob1=None,  prob2=None,  prob3=None):
         self.feat0.append(np.array([feat0]))
+        self.feat2.append(np.array([feat2]))
         self.actions.append(np.array([act], dtype=np.int32))
         self.rewards.append(np.array([reward]))
         self.terminals.append(np.array([not alive], dtype=np.bool))
@@ -153,8 +153,8 @@ class AgentMemory(object):
 
     def pull(self):
         res = {
-            'obs0': self.obs0.pull(),
             'feat0': self.feat0.pull(),
+            'feat2': self.feat2.pull(),
             'act': self.actions.pull(),
             'rewards': self.rewards.pull(),
             'terminals': self.terminals.pull(),
@@ -166,18 +166,18 @@ class AgentMemory(object):
 
 
 class MemoryGroup(object):
-    def __init__(self, obs_shape, feat_shape, act_n, max_len, batch_size, sub_len, use_mean=False):
+    def __init__(self, feat_shape, feat_shape2,act_n, max_len, batch_size, sub_len, use_mean=False):
         self.agent = dict()
         self.max_len = max_len
         self.batch_size = batch_size
-        self.obs_shape = obs_shape
         self.feat_shape = feat_shape
+        self.feat_shape2 = feat_shape2
         self.sub_len = sub_len
         self.use_mean = use_mean
         self.act_n = act_n
 
-        self.obs0 = MetaBuffer(obs_shape, max_len)
         self.feat0 = MetaBuffer(feat_shape, max_len)
+        self.feat2 = MetaBuffer(feat_shape2, max_len)
         self.actions = MetaBuffer((), max_len, dtype='int32')
         self.rewards = MetaBuffer((), max_len)
         self.terminals = MetaBuffer((), max_len, dtype='bool')
@@ -188,8 +188,8 @@ class MemoryGroup(object):
         self._new_add = 0
 
     def _flush(self, **kwargs):
-        self.obs0.append(kwargs['obs0'])
         self.feat0.append(kwargs['feat0'])
+        self.feat2.append(kwargs['feat2'])
         self.actions.append(kwargs['act'])
         self.rewards.append(kwargs['rewards'])
         self.terminals.append(kwargs['terminals'])
@@ -205,18 +205,18 @@ class MemoryGroup(object):
     def push(self, **kwargs):
         for i, _id in enumerate(kwargs['ids']):
             if self.agent.get(_id) is None:
-                self.agent[_id] = AgentMemory(self.obs_shape, self.feat_shape, self.act_n, self.sub_len, use_mean=self.use_mean)
+                self.agent[_id] = AgentMemory(self.feat_shape, self.feat_shape2, self.act_n, self.sub_len, use_mean=self.use_mean)
             if self.use_mean:
-                self.agent[_id].append(obs0=kwargs['state'][0][i], feat0=kwargs['state'][1][i], act=kwargs['acts'][i], reward=kwargs['rewards'][i], alive=kwargs['alives'][i], prob0=kwargs['prob0'][i], prob1=kwargs['prob1'][i])
+                self.agent[_id].append(feat0=kwargs['state'][0][i], feat2=kwargs['state'][1][i], act=kwargs['acts'][i], reward=kwargs['rewards'][i], alive=kwargs['alives'][i], prob0=kwargs['prob0'][i], prob1=kwargs['prob1'][i])
             else:
-                self.agent[_id].append(obs0=kwargs['state'][0][i], feat0=kwargs['state'][1][i], act=kwargs['acts'][i], reward=kwargs['rewards'][i], alive=kwargs['alives'][i])
+                self.agent[_id].append(feat0=kwargs['state'][0][i], feat2=kwargs['state'][1][i], act=kwargs['acts'][i], reward=kwargs['rewards'][i], alive=kwargs['alives'][i])
 
     def tight(self):
         ids = list(self.agent.keys())
         np.random.shuffle(ids)
         for ele in ids:
             tmp = self.agent[ele].pull()
-            self._new_add += len(tmp['obs0'])
+            self._new_add += len(tmp['feat0'])
             self._flush(**tmp)
         self.agent = dict()  # clear
 
@@ -224,10 +224,10 @@ class MemoryGroup(object):
         idx = np.random.choice(self.nb_entries, size=self.batch_size)
         next_idx = (idx + 1) % self.nb_entries
 
-        obs = self.obs0.sample(idx)
-        obs_next = self.obs0.sample(next_idx)
         feature = self.feat0.sample(idx)
         feature_next = self.feat0.sample(next_idx)
+        feature2 = self.feat2.sample(idx)
+        feature2_next = self.feat2.sample(next_idx)
         actions = self.actions.sample(idx)
         rewards = self.rewards.sample(idx)
         dones = self.terminals.sample(idx)
@@ -238,19 +238,19 @@ class MemoryGroup(object):
             act_prob1 = self.prob1.sample(idx)
             act_next_prob0 = self.prob0.sample(next_idx)
             act_next_prob1 = self.prob1.sample(next_idx)
-            return obs, feature, actions, act_prob0, act_prob1, obs_next, feature_next, act_next_prob0, act_next_prob1, rewards, dones, masks
+            return feature, feature2, actions, act_prob0, act_prob1, feature_next, feature2_next, act_next_prob0, act_next_prob1, rewards, dones, masks
         else:
-            return obs, feature, obs_next, feature_next, dones, rewards, actions, masks
+            return feature, feature2, feature_next, feature2_next, feature_next, dones, rewards, actions, masks
 
     def get_batch_num(self):
-        print('\n[INFO] Length of buffer and new add:', len(self.obs0), self._new_add)
+        print('\n[INFO] Length of buffer and new add:', len(self.feat0), self._new_add)
         res = self._new_add * 2 // self.batch_size
         self._new_add = 0
         return res
 
     @property
     def nb_entries(self):
-        return len(self.obs0)
+        return len(self.feat0)
 
 
 class SummaryObj:

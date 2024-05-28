@@ -24,9 +24,9 @@ class DQN(base.ValueNet):
         batch_num = self.replay_buffer.get_batch_num()
 
         for i in range(batch_num):
-            obs, feats, obs_next, feat_next, dones, rewards, actions, masks = self.replay_buffer.sample()
-            target_q = self.calc_target_q(obs=obs_next, feature=feat_next, rewards=rewards, dones=dones)
-            loss, q = super().train(state=[obs, feats], target_q=target_q, acts=actions, masks=masks)
+            feat, feat2, feat_next, feat2_next, dones, rewards, actions, masks = self.replay_buffer.sample()
+            target_q = self.calc_target_q(feature=feat_next, feature2=feat2_next, rewards=rewards, dones=dones)
+            loss, q = super().train(state=[feat, feat2], target_q=target_q, acts=actions, masks=masks)
 
             self.update()
 
@@ -59,8 +59,8 @@ class MFQ(base.ValueNet):
         config = {
             'max_len': memory_size,
             'batch_size': batch_size,
-            'obs_shape': self.view_space,
             'feat_shape': self.feature_space,
+            'feat_shape2': self.new_space,
             'act_n': self.num_actions,
             'use_mean': True,
             'sub_len': sub_len
@@ -78,9 +78,9 @@ class MFQ(base.ValueNet):
         batch_name = self.replay_buffer.get_batch_num()
 
         for i in range(batch_name):
-            obs, feat, acts, act_prob, obs_next, feat_next, act_prob_next, rewards, dones, masks = self.replay_buffer.sample()
-            target_q = self.calc_target_q(obs=obs_next, feature=feat_next, rewards=rewards, dones=dones, prob=act_prob_next)
-            loss, q = super().train(state=[obs, feat], target_q=target_q, prob=act_prob, acts=acts, masks=masks)
+            feat, feat2, acts, act_prob, feat_next, feat2_next, act_prob_next, rewards, dones, masks = self.replay_buffer.sample()
+            target_q = self.calc_target_q(feature=feat_next, feature2=feat2_next, rewards=rewards, dones=dones, prob=act_prob_next)
+            loss, q = super().train(state=[feat, feat2], target_q=target_q, prob=act_prob, acts=acts, masks=masks)
 
             self.update()
 
@@ -111,8 +111,8 @@ class MTMFQ(base2.ValueNet):
         config = {
             'max_len': memory_size,
             'batch_size': batch_size,
-            'obs_shape': self.view_space,
             'feat_shape': self.feature_space,
+            'feat_shape2': self.new_space,
             'act_n': self.num_actions,
             'use_mean': True,
             'sub_len': sub_len
@@ -130,9 +130,9 @@ class MTMFQ(base2.ValueNet):
         batch_name = self.replay_buffer.get_batch_num()
 
         for i in range(batch_name):
-            obs, feat, acts, act_prob0, act_prob1, obs_next, feat_next, act_prob_next0, act_prob_next1, rewards, dones, masks = self.replay_buffer.sample()
-            target_q = self.calc_target_q(obs=obs_next, feature=feat_next, rewards=rewards, dones=dones, prob0=act_prob_next0, prob1=act_prob_next1)
-            loss, q = super().train(state=[obs, feat], target_q=target_q, prob0=act_prob0, prob1 = act_prob1, acts=acts, masks=masks)
+            feat, feat2, acts, act_prob0, act_prob1, feat_next, feat_next2, act_prob_next0, act_prob_next1, rewards, dones, masks = self.replay_buffer.sample()
+            target_q = self.calc_target_q(feature=feat_next, feature2=feat_next2, rewards=rewards, dones=dones, prob0=act_prob_next0, prob1=act_prob_next1)
+            loss, q = super().train(state=[feat, feat2], target_q=target_q, prob0=act_prob0, prob1 = act_prob1, acts=acts, masks=masks)
 
             self.update()
 
@@ -152,6 +152,58 @@ class MTMFQ(base2.ValueNet):
         model_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, self.name_scope)
         saver = tf.train.Saver(model_vars)
         file_path = os.path.join(dir_path, "mtmfq_{}".format(step))
+        saver.restore(self.sess, file_path)
+
+        print("[*] Loaded model from {}".format(file_path))
+
+class POMTMFQ(base2.ValueNet):
+    def __init__(self, sess, name, handle, env, sub_len, eps=1.0, update_every=5, memory_size=2**10, batch_size=64):
+        super().__init__(sess, env, handle, name, use_mf=True, update_every=update_every)
+
+        config = {
+            'max_len': memory_size,
+            'batch_size': batch_size,
+            'feat_shape': self.feature_space,
+            'feat_shape2': self.new_space,
+            'act_n': self.num_actions,
+            'use_mean': True,
+            'sub_len': sub_len
+        }
+
+        self.train_ct = 0
+        self.replay_buffer = tools2.MemoryGroup(**config)
+        self.update_every = update_every
+
+    def flush_buffer(self, **kwargs):
+        self.replay_buffer.push(**kwargs)
+
+    def train(self):
+        self.replay_buffer.tight()
+        batch_name = self.replay_buffer.get_batch_num()
+
+        for i in range(batch_name):
+            feat, feat2, acts, act_prob0, act_prob1, feat_next, feat_next2, act_prob_next0, act_prob_next1, rewards, dones, masks = self.replay_buffer.sample()
+            target_q = self.calc_target_q(feature=feat_next, feature2=feat_next2, rewards=rewards, dones=dones, prob0=act_prob_next0, prob1=act_prob_next1)
+            loss, q = super().train(state=[feat, feat2], target_q=target_q, prob0=act_prob0, prob1 = act_prob1, acts=acts, masks=masks)
+
+            self.update()
+
+            if i % 50 == 0:
+                print('[*] LOSS:', loss, '/ Q:', q)
+
+    def save(self, dir_path, step=0):
+        model_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, self.name_scope)
+        saver = tf.train.Saver(model_vars)
+
+        file_path = os.path.join(dir_path, "pomfq_{}".format(step))
+        saver.save(self.sess, file_path)
+
+        print("[*] Model saved at: {}".format(file_path))
+
+    def load(self, dir_path, step=0):
+        model_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, self.name_scope)
+        saver = tf.train.Saver(model_vars)
+        file_path = os.path.join(dir_path, "pomfq_{}".format(step))
         saver.restore(self.sess, file_path)
 
         print("[*] Loaded model from {}".format(file_path))
